@@ -1,0 +1,16 @@
+node_modules/
+lib/
+.artifacts/
+.env
+coverage/
+.env.*
+!.env.example
+.DS_Store
+*.log
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+credentials.json
+connection.json
+selection.json
