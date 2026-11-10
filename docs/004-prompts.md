@@ -35,6 +35,8 @@ The generated sections are editable templates. They must retain these placeholde
 
 Editing a part changes the instructions the model receives. It does not change the gate, Mandates, tool checks or account wrappers, which remain enforced by code.
 
+Worker status instructions distinguish missing evidence from verified completion. Required issue details, logs, traces or authorization that remain unavailable are **blocked**, with the missing prerequisite and verified portion of the chain recorded. **Dropped** requires evidence that no further work is needed; the report tool rejects a dropped report with an unresolved human action. A diagnosis-only assignment can report **ready** when its diagnostic deliverable and checks are complete, without implying a production repair.
+
 On an explicit human request, the main Session can also save overrides with `orchestrator_prompts_save`. If a save omits an override's `base`, it keeps the saved base. A removed part already present in the saved configuration is dropped on save; any other unknown part is refused.
 
 An override records which built-in text it was based on. Upgrades preserve the team's text. If the default changes, the panel marks the part **Default updated** and shows the difference beside the team's text. The team can keep its text, use the new default or edit it. Parts without overrides automatically follow new defaults.

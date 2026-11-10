@@ -94,6 +94,8 @@ The existing **Settings → Eval → Eval settings → Accept mode** controls th
 
 The subscription card shows its mode, global accept mode and **Sent to Eval** count, links to the existing accept-mode settings, and offers **View processing trace** for its last Trigger. That trace exposes the existing decisions, related Tickets and worker execution. An intake count alone does not prove rule acceptance or worker success. Disconnecting, changing accounts, cancelling the subscription or returning to context-only invalidates its task scope and notifies affected open Tickets. There is no personal-subscription outbound channel and no automatic group reply.
 
+Validate each boundary separately: a new polled message increments **Received**; a retained Trigger increments **Sent to Eval**; its Decision records acceptance or the reason it was ignored; an accepted Ticket records the worker assignment; the assignment's full report records its evidence and outcome. **Assess latest message** is an explicit replay and does not prove a new natural arrival. Issue-detail access is a separate prerequisite from chat authorization: HTTP 401/403, missing Trace or an inaccessible console must remain blocked rather than be treated as an unreproduced defect. Remedy the prerequisite and retry the Ticket; the earlier report remains visible on its detail page.
+
 ### Feishu bot task Source
 
 Use the existing Feishu Source and the bot-only `lark-cli` setup in [006 Deployment](006-deployment.md). Enable `dsh-superagent-feishu`, configure its CLI, allowed users and received groups/direct messages. The new plugin does not replace this transport or alter its history/topic handling.

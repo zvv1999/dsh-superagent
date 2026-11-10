@@ -494,6 +494,21 @@ it('relays a worker\'s report with its ticket card and the start of its summary,
   expect(notices().at(-1)).toMatchObject({ ticket_ended: { ticket_id: ticket.id, state: 'completed' } })
 })
 
+it('refuses to close a ticket while its report still requires a human action', async () => {
+  const { ticket, sessionId } = await h.acceptedTicket(feishu('evidence-blocked', '@bot Diagnose the alert'))
+  await expect(h.runTool(sessionId, 'orchestrator_report', { state: 'dropped', summary: 'Details unavailable.',
+    human_action: 'Please sign in to the issue console.' })).rejects.toThrow('cannot be dropped')
+  expect(h.runtime.store.tickets.get(ticket.id)?.ended).toBeUndefined()
+  expect(h.runtime.store.tickets.get(ticket.id)?.assignments.at(-1)?.report).toBeUndefined()
+  await h.runTool(sessionId, 'orchestrator_report', { state: 'progress', summary: 'Independent checks continue.',
+    human_action: 'Please sign in to the issue console.' })
+  await expect(h.runTool(sessionId, 'orchestrator_report', { state: 'dropped', summary: 'Details still unavailable.' }))
+    .rejects.toThrow('cannot be dropped')
+  await h.runTool(sessionId, 'orchestrator_report', { state: 'blocked', summary: 'Details returned HTTP 401.' })
+  expect(h.runtime.store.tickets.get(ticket.id)?.ended).toBeUndefined()
+  expect(h.runtime.store.tickets.get(ticket.id)?.assignments.at(-1)?.report?.state).toBe('blocked')
+})
+
 it('tells the main Session of the settings, prompts, requeues and unsubscriptions others made, never of its own', async () => {
   const save = (args: Record<string, unknown>) => h.runTool(h.runtime.masterId, 'orchestrator_settings_save', args)
   const evaluation = h.runtime.store.settings().eval

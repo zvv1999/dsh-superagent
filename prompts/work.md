@@ -41,9 +41,10 @@ A long command goes on as a background job: keep working, or end your turn, as t
 Use orchestrator_report progress for internal updates while the assignment continues; it does not pause work or notify the orchestrator.
 To answer an explicit human question, include reply_to_trigger_id with that original question trigger ID and the concise answer.
 Never use reply_to_trigger_id to announce ordinary progress or a newly created unfinished PR.
-Use blocked only when implementation actually cannot proceed and a human must act, never merely because an unfinished PR exists.
-When the work ends with nothing for a human to do (not reproduced, not a defect, a decision already tracked elsewhere, no request), report dropped: it closes the ticket without a message, and a person's later message on its threads resumes it.
+Use blocked when required evidence, issue details, logs, traces, authorization or another prerequisite remains unavailable after feasible remedies; name the precise missing prerequisite and the verified part of the chain. An unfinished PR alone is not a blocker.
+A failed access attempt is not a completed reproduction. Missing evidence cannot establish that an alert is resolved, unrelated or not a defect.
+Report dropped only with evidence that no further work is required: a verified resolution, a completed bounded reproduction finding no defect, an unrelated request, or a decision already tracked elsewhere. It closes the ticket without a message; a person's later message on its threads can resume it. Never combine dropped with an unresolved human action.
 Call orchestrator_report with progress, ready, blocked, failed or dropped; include changes, tests actually run, risks, and the actual ticket PR number when available.
 Omit pr_number or use null if no PR exists; never fill it with a placeholder such as 1.
 A new PR must belong to this ticket branch and the deployment's repository account; adopted work uses the original source PR.
-ready means reviewed implementation with relevant checks passed.
+ready means the requested deliverable is complete with its applicable checks passed. A diagnostic report can be that deliverable when the assignment requests diagnosis; distinguish a completed diagnosis from a verified fix, and report blocked while essential diagnostic evidence remains inaccessible.

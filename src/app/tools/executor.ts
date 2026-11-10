@@ -78,9 +78,10 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
     }),
     tool({
       name: 'orchestrator_report',
-      description: 'Report progress, ready, blocked, failed or dropped, as the work and handoff sections say.',
+      description: 'Report progress, ready, blocked, failed or dropped. Missing evidence or access is blocked; dropped requires evidence that no further work is needed. Follow the work and handoff sections.',
       schema: z.object({
-        state: z.enum(['progress', 'ready', 'blocked', 'failed', 'dropped']),
+        state: z.enum(['progress', 'ready', 'blocked', 'failed', 'dropped'])
+          .describe('Use blocked for unavailable required details, traces or permissions. A failed evidence fetch is not proof of no defect; dropped means verified no further work.'),
         summary: z.string().min(1),
         human_action: z.string().trim().min(1).max(1000).nullish().describe('One concrete question for a person, also with state=progress; omit to keep the pending one, null to clear it.'),
         question_for_trigger_id: z.string().optional().describe('With human_action: the human message that raised the question, which is asked where that person wrote.'),
@@ -90,6 +91,8 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
       execute: async (args, signal) => {
         const current = host.store.tickets.get(ticketId)
         if (!current || !liveTicket(current)) throw new Error('Ticket ended (PR was closed or work finished); do not resume it')
+        const question = args.human_action === undefined ? current.attention?.question : args.human_action
+        if (args.state === 'dropped' && question) throw new Error('An unresolved human action cannot be dropped. Report blocked, or progress while other authorized work continues.')
         const pull = args.pr_number != null && !gitlab ? await readPull(host.github, args.pr_number, signal) : undefined
         const merge = args.pr_number != null && gitlab ? await readMergeRequest(gitlab, args.pr_number, signal) : undefined
         // Claim the PR/MR and record its report atomically so a rejected claim leaves no partial state.

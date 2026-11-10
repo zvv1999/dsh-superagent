@@ -105,6 +105,40 @@ it('records but never dispatches a task observation when global processing is of
   expect(outboxCount()).toBe(0)
 })
 
+it('carries a polled robot alert through blocked diagnosis, an owner retry and a visible completed report without chat delivery', async () => {
+  const id = await subscribe()
+  read.mockResolvedValue(page('alarm', 'baseline'))
+  expect(await h.api('POST', `connections/dingtalk-user/subscriptions/${id}/check`, {})).toMatchObject({ status: 200 })
+  await h.runtime.idle()
+  expect(h.candidates()).toHaveLength(1)
+  const triggerId = String(h.candidates()[0])
+  await h.runTool(h.runtime.masterId, 'orchestrator_eval', { trigger_id: triggerId })
+  const result = await decide(triggerId)
+  await h.runtime.idle()
+  const ticketId = String((result.ticket as { ticket_id: string }).ticket_id), worker = `worker-${ticketId}`
+  const blocker = 'Issue details returned HTTP 401.\n\nThe message reached the worker; raw Trace is unavailable and the defect is unverified.'
+  await h.runTool(worker, 'orchestrator_report', { state: 'blocked', summary: blocker })
+  await h.runtime.idle()
+  expect(await h.api('GET', `tickets/${ticketId}`)).toMatchObject({ status: 200, body: {
+    state: 'open', stage: 'person', action: 'blocked', actions: { retry: true }, summary: blocker,
+    assignments: [{ report: { state: 'blocked', summary: blocker } }],
+  } })
+  expect(await h.api('POST', `tickets/${ticketId}/retry`)).toMatchObject({ status: 200 })
+  await h.runtime.idle()
+  const conclusion = 'Diagnosis complete with the supplied test evidence.\n\nThis verifies the harness lifecycle, not production recovery.'
+  await h.runTool(worker, 'orchestrator_report', { state: 'ready', summary: conclusion })
+  await h.runtime.idle()
+  expect(await h.api('GET', `tickets/${ticketId}`)).toMatchObject({ status: 200, body: {
+    state: 'ended', ended: { outcome: 'completed' }, summary: conclusion,
+    assignments: [{ report: { state: 'blocked', summary: blocker } }, { report: { state: 'ready', summary: conclusion } }],
+  } })
+  expect(await h.api('POST', `connections/dingtalk-user/subscriptions/${id}/assess-latest`, {}))
+    .toMatchObject({ status: 200, body: { result: 'duplicate', triggerId } })
+  expect((await h.runtime.dingtalkSubscriptions.list())[0]).toMatchObject({ received: 1, triggered: 1, lastTriggerId: triggerId })
+  expect(h.runtime.store.tickets.list()).toHaveLength(1)
+  expect(outboxCount()).toBe(0)
+})
+
 it('does not dispatch alerts outside the enabled rule, or ingest while the task Source is disabled', async () => {
   const id = await subscribe(), triggerId = await latest(id)
   await h.runTool(h.runtime.masterId, 'orchestrator_eval', { trigger_id: triggerId })

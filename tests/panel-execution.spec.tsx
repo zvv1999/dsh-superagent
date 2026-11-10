@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 // The Execution status, a Ticket, and the Execution settings.
 import { act } from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
 import { usePanel, mount, remount, all, find, tab, click, type, text, field, at } from './fixtures/panel.tsx'
@@ -212,6 +214,43 @@ it('words an ended Ticket by its outcome, on its row and its page, with a person
     reason: '不需要了' } }
   await remount(en)
   expect(all('.dt-hint').map(hint => hint.textContent).find(line => line?.includes(en['outcome.stopped']))).toMatch(/Stopped by a person: 不需要了$/)
+})
+
+it.each(['dropped', 'ready', 'blocked'] as const)('shows the full %s diagnosis even after a single worker assignment', async state => {
+  const ticket = server.ticketDetails.t1!, assignment = ticket.assignments[0]!
+  const summary = 'Diagnostic conclusion.\n\n' + 'Evidence remains visible. '.repeat(80) + '\n\nLast trace verification: HTTP 401, production fix unverified.'
+  const shown = { ...ticket,
+    state: state === 'blocked' ? 'open' as const : 'ended' as const, actions: { retry: state === 'blocked', stop: state === 'blocked' }, summary,
+    assignments: [{ ...assignment, report: { state, summary, at: '2026-09-23T00:01:00Z' } }] }
+  server.ticketDetails.t1 = state === 'blocked' ? { ...shown, stage: 'person', action: 'blocked' } : { ...shown, stage: 'ended' }
+  at({ page: 'execution', id: 't1' })
+  await mount()
+  expect(text()).toContain('Last trace verification: HTTP 401, production fix unverified.')
+  expect(document.querySelector('.dt-disclosure-body .dt-assignment-report')?.textContent).toContain('Diagnostic conclusion.')
+  expect(text()).toContain(zh.assignmentNumber.replace('{number}', '1'))
+  await remount(en)
+  expect(text()).toContain('Last trace verification: HTTP 401, production fix unverified.')
+  const styles = document.createElement('style')
+  styles.textContent = readFileSync(resolve('src', 'client', 'client.css'), 'utf8')
+  document.head.append(styles)
+  try {
+    const report = document.querySelector<HTMLElement>('.dt-assignment-report')!
+    expect(getComputedStyle(report).whiteSpace).toBe('normal')
+    expect(getComputedStyle(report).overflow).not.toBe('hidden')
+    expect(getComputedStyle(report).overflowWrap).toBe('anywhere')
+  } finally { styles.remove() }
+})
+
+it('retains the evidence from the blocked assignment beside the report after a retry', async () => {
+  const ticket = server.ticketDetails.t1!, assignment = ticket.assignments[0]!
+  server.ticketDetails.t1 = { ...ticket, stage: 'ended', state: 'ended', actions: { retry: false, stop: false },
+    assignments: [{ ...assignment, state: 'ended', report: { state: 'blocked', summary: 'Initial fetch: HTTP 401.', at: '' } },
+      { ...assignment, id: 'a2', state: 'ended', report: { state: 'ready', summary: 'Follow-up: evidence inspected, diagnosis complete.', at: '' } }] }
+  at({ page: 'execution', id: 't1' })
+  await mount()
+  expect(all('.dt-disclosure-body .dt-assignment-report').map(node => node.textContent)).toEqual([
+    'Follow-up: evidence inspected, diagnosis complete.', 'Initial fetch: HTTP 401.',
+  ])
 })
 
 it('sends one stop for a double click on Confirm', async () => {
