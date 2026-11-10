@@ -161,7 +161,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
       false, (resource, offset, limit, signal) => readResource(resources, resource, offset, limit, undefined, signal)),
     tool({
       name: 'orchestrator_dingtalk_subscription',
-      description: 'Owner-requested subscriptions for verified chats; context only, no tasks or replies.',
+      description: 'Owner-requested subscriptions; context-only by default. Task mode is panel-only. No replies.',
       schema: z.object({ operation: z.enum(['subscribe', 'unsubscribe']), chatId: z.string().optional(), name: z.string().optional(),
         senderId: z.string().optional(), id: z.string().optional() }).strict(),
       execute: async args => {

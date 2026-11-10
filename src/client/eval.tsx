@@ -218,8 +218,8 @@ function EvalBlock() {
 
 export function EvalSettings({ version }: { version?: string | undefined }) {
   return <div className="dt-form">
-    <PolicyBlock />
     <EvalBlock />
+    <PolicyBlock />
     <ConfigHistory blocks={['policy', 'eval']} versions {...version ? { focus: version } : {}} />
   </div>
 }

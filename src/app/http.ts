@@ -15,7 +15,7 @@ import { CliConnectRequestSchema, CliConfirmSchema, CliCredentialsSchema, CliPla
 import { CliFailure } from './cli-connect-types.ts'
 import { FEISHU_USER_CALLBACK, FEISHU_USER_DONE, FeishuUserBegin, FeishuUserError, type FeishuUser } from './feishu-user.ts'
 import { DingTalkUserConnect, DingTalkUserError, type DingTalkUser } from './dingtalk-user.ts'
-import { DingTalkSubscribe, type DingTalkSubscriptions } from './dingtalk-subscriptions.ts'
+import { DingTalkSubscribe, DingTalkSubscriptionMode, type DingTalkSubscriptions } from './dingtalk-subscriptions.ts'
 import { OperatorRequestSchema, OperatorRequestConflict, type OperatorRequests } from '../sources/operator.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
 import { UserError, type EngineForPeople, type Ticket } from '../core/index.ts'
@@ -47,7 +47,7 @@ export interface HttpHost {
   readonly cliConnect: Pick<CliConnect, 'current' | 'begin' | 'select' | 'credentials' | 'check' | 'confirm' | 'cancel' | 'pair' | 'cancelPair'>
   readonly feishuUser: Pick<FeishuUser, 'current' | 'begin' | 'cancel' | 'disconnect' | 'callback' | 'read' | 'renew'>
   readonly dingtalkUser: Pick<DingTalkUser, 'current' | 'begin' | 'cancel' | 'disconnect' | 'read' | 'groupList' | 'refreshGroups'>
-  readonly dingtalkSubscriptions: Pick<DingTalkSubscriptions, 'list' | 'subscribe' | 'unsubscribe' | 'check'>
+  readonly dingtalkSubscriptions: Pick<DingTalkSubscriptions, 'list' | 'subscribe' | 'unsubscribe' | 'check' | 'setMode' | 'assessLatest'>
   readonly operatorRequests: Pick<OperatorRequests, 'submit'>
   readonly engine: EngineForPeople
   readonly executor: Pick<DshExecutor, 'activeCount'>
@@ -182,6 +182,12 @@ function routes(runtime: HttpHost): Routes {
     'POST connections/dingtalk-user/subscriptions/:id/check': async ({ params, body }) => {
       z.object({}).strict().parse(await body(1024))
       return runtime.dingtalkSubscriptions.check(params.id)
+    },
+    'POST connections/dingtalk-user/subscriptions/:id/mode': async ({ params, body }) =>
+      runtime.dingtalkSubscriptions.setMode(params.id, DingTalkSubscriptionMode.parse(await body(1024))),
+    'POST connections/dingtalk-user/subscriptions/:id/assess-latest': async ({ params, body }) => {
+      z.object({}).strict().parse(await body(1024))
+      return runtime.dingtalkSubscriptions.assessLatest(params.id)
     },
     'GET connections/dingtalk-user': () => runtime.dingtalkUser.current(),
     'GET connections/dingtalk-user/groups': () => runtime.dingtalkUser.groupList() ?? null,

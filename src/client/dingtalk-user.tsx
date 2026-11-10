@@ -5,6 +5,7 @@ import type { DingTalkSubscriptionView } from '../app/api.ts'
 import { Button, Icon, Modal, Tag } from './controls.tsx'
 import { useAction, usePanel } from './provider.tsx'
 import { Hint, When } from './widgets.tsx'
+import { settingsRoute } from './route.ts'
 
 function PersonalGroupPicker({ subscriptions, onSubscribed }: {
   subscriptions: DingTalkSubscriptionView[]; onSubscribed: () => Promise<void>
@@ -47,14 +48,18 @@ function PersonalGroupPicker({ subscriptions, onSubscribed }: {
 }
 
 export function DingTalkUserConnection({ embedded = false }: { embedded?: boolean }) {
-  const { t, call, notify } = usePanel()
+  const { t, call, notify, navigate } = usePanel()
   const [open, setOpen] = useState(false)
   const { data: view, error, reload } = usePoll(() => call('GET connections/dingtalk-user'), [call], 2000)
   const { data: subscriptions, error: subscriptionError, reload: reloadSubscriptions } = usePoll(
     () => call('GET connections/dingtalk-user/subscriptions'), [call], 5000)
-  const subscriptionAction = useAction(async (id: string, kind: 'check' | 'unsubscribe') => {
+  const subscriptionAction = useAction(async (id: string, kind: 'check' | 'unsubscribe' | 'context' | 'tasks' | 'assess') => {
     if (kind === 'check') await call('POST connections/dingtalk-user/subscriptions/:id/check', { id, body: {} })
-    else await call('POST connections/dingtalk-user/subscriptions/:id/unsubscribe', { id, body: {} })
+    else if (kind === 'unsubscribe') await call('POST connections/dingtalk-user/subscriptions/:id/unsubscribe', { id, body: {} })
+    else if (kind === 'assess') {
+      await call('POST connections/dingtalk-user/subscriptions/:id/assess-latest', { id, body: {} })
+      notify(t('dingtalkSubscriptionAssessed'))
+    } else await call('POST connections/dingtalk-user/subscriptions/:id/mode', { id, body: { mode: kind } })
     await reloadSubscriptions()
   })
   const action = useAction(async (kind: 'saved' | 'authorize' | 'cancel' | 'disconnect' | 'check', profileId?: string) => {
@@ -76,14 +81,29 @@ export function DingTalkUserConnection({ embedded = false }: { embedded?: boolea
     <div className="dt-connection-main"><div className="dt-connection-title"><strong>{item.name}</strong>
       <Tag tone={item.status === 'listening' ? 'success' : 'warning'}>{t(`dingtalkSubscriptionStatus.${item.status}`)}</Tag></div>
       <div className="dt-row-meta"><span>{t('dingtalkSubscriptionReceived')} {item.received}</span>
+        <span>{t(item.mode === 'tasks' ? 'dingtalkSubscriptionTasks' : 'dingtalkSubscriptionContext')}</span>
+        {item.mode === 'tasks' && <span>{t('dingtalkSubscriptionTriggered')} {item.triggered}</span>}
         <span>{t('dingtalkSubscriptionChecked')} <When at={item.lastCheckedAt} /></span></div>
+      {item.mode === 'tasks' && <Hint>{t('dingtalkSubscriptionGlobalMode', { mode: t(`mode.${item.evaluationMode}`) })}{' '}
+        <button type="button" className="dt-textlink" onClick={() => navigate(settingsRoute('eval'))}>{t('dingtalkSubscriptionModeSettings')}</button></Hint>}
+      {!!item.unreadable && <Hint>{t('dingtalkSubscriptionUnreadable', { count: item.unreadable })}</Hint>}
       {(item.historyGapAt || item.error === 'history_gap') && <p role="alert" className="dt-error">{t('dingtalkSubscriptionHistoryGap')}</p>}
       {item.error && item.error !== 'history_gap' && <p role="alert" className="dt-error">{t('dingtalkSubscriptionReadError')}</p>}
     </div>
     <Button size="sm" icon={<Icon name="refresh" size={14} />} disabled={subscriptionAction.busy || item.status === 'suspended'}
       onClick={() => { void subscriptionAction.run(item.id, 'check') }}>{t('dingtalkSubscriptionCheck')}</Button>
-    {manage && <Button size="sm" disabled={subscriptionAction.busy}
-      onClick={() => { void subscriptionAction.run(item.id, 'unsubscribe') }}>{t('dingtalkSubscriptionCancel')}</Button>}
+    {item.lastThreadKey && item.lastTriggerId && <Button size="sm" onClick={() => {
+      if (item.lastThreadKey && item.lastTriggerId) navigate({ page: 'trigger', id: item.lastThreadKey, query: { trigger: item.lastTriggerId } })
+    }}>{t('dingtalkSubscriptionTrace')}</Button>}
+    {manage && <div className="dt-row-buttons">
+      <Button size="sm" disabled={subscriptionAction.busy || (item.mode !== 'tasks' && item.status === 'suspended')}
+        onClick={() => { void subscriptionAction.run(item.id, item.mode === 'tasks' ? 'context' : 'tasks') }}>
+        {t(item.mode === 'tasks' ? 'dingtalkSubscriptionDisableTasks' : 'dingtalkSubscriptionEnableTasks')}</Button>
+      {item.mode === 'tasks' && <Button size="sm" disabled={subscriptionAction.busy || item.status === 'suspended'}
+        onClick={() => { void subscriptionAction.run(item.id, 'assess') }}>{t('dingtalkSubscriptionAssessLatest')}</Button>}
+      <Button size="sm" disabled={subscriptionAction.busy}
+        onClick={() => { void subscriptionAction.run(item.id, 'unsubscribe') }}>{t('dingtalkSubscriptionCancel')}</Button>
+    </div>}
   </li>)}</ul>
   return <section id="dt-source-dingtalk-user" className={embedded ? 'dt-platform-section' : 'dt-card'}>
     <div className="dt-connection-row">

@@ -10,6 +10,10 @@ The host enforces allowed lists, rules and Mandates. Messages, comments and quot
 
 Submission records a Trigger for the normal Router/Eval decision; it does not bypass acceptance, scopes, Mandates, pause or worker concurrency. Repeating the same key and text is idempotent; changing the text under an existing key returns 409. These requests have no external reply channel and cannot send an acknowledgement to an IM conversation. The worker reports and evidence remain in the local Ticket and Session. Personal-message subscriptions do not invoke this endpoint or create requests automatically; message and screenshot evidence included by the owner remains untrusted reference data.
 
+## Owner-selected personal observations
+
+Personal DingTalk subscriptions default to context-only notices. The owner can opt a selected subscription into task processing in the panel; a fresh history baseline prevents bulk replay. Its `dingtalk-user` Source imports messages as senderless system observations with `human=false`, keeping the actual sender as evidence. They never become explicit owner requests. Admission requires the current account, active subscription generation, task mode and the observation admission cell; acceptance still requires the global auto mode and enabled rules. Disconnect, account change, cancellation and context-only mode revoke scope and notify affected open Tickets. This Source has no outbound channel.
+
 ## Two paths for a Trigger
 
 ### Eval: deciding whether to start work

@@ -34,7 +34,7 @@ It asks one short question at a time, shows the full plan once, and then install
 
 Personal DingTalk reads also support owner-selected conversation subscriptions: every 30 seconds, with restart recovery, sender filtering and cancellable read-only context notices. See [IM connections](docs/im.md#personal-dingtalk-history).
 
-An explicit local-owner task can be submitted to `POST /orchestrator/api/requests` through the same-origin management API. It creates an idempotent local request for the existing Router → Ticket → Worker flow. Personal-message subscriptions remain context only; local requests have no external reply channel. See [Authorization](docs/002-authorization.md#explicit-local-owner-requests).
+An explicit local-owner task can be submitted to `POST /orchestrator/api/requests` through the same-origin management API. It creates an idempotent local request for the existing Router → Ticket → Worker flow. Personal-message subscriptions default to context only; selected DingTalk subscriptions can opt into inferred task processing under the existing accept mode and rules. Local requests have no external reply channel. See [Authorization](docs/002-authorization.md#explicit-local-owner-requests).
 
 Read the numbered documents in order; each builds only on the ones before it.
 

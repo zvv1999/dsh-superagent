@@ -41,6 +41,8 @@ Ticket details show the originating Trigger, Decision and reason, scope and Poli
   An upgrade that changes an overridden default marks it **Default updated** (默认内容已更新). The panel compares the old and new defaults above the team's text. If the old default was not recorded, it compares the team's text with the new default instead. Choose **Keep my text** or **Use the new default**. Overrides for removed parts are listed below the tab bar and dropped on the next save.
 - **Deployment:** startup problems with **Check again**, the state directory and machine limits. Saved limits apply without restart. The DeepSeek Harness Plugin Manager exposes the same page.
 
+Personal DingTalk subscriptions are managed in **Settings → Sources → DingTalk → Personal messages → Manage**. Each defaults to context-only; **Enable task processing** opts only that subscription into the existing rule pipeline. **Assess latest message** verifies one persisted input, and **View processing trace** opens its Trigger, Decisions, Tickets and worker. The card also links to **Settings → Eval**, where the existing **Accept mode** now appears before Policy rules. Observe records judgments without workers; Auto additionally requires a matching enabled rule.
+
 ## Search
 
 The header search finds Triggers by text, id, Feishu message id or a stored link, such as a GitHub comment URL. A Feishu link missing from the original message becomes searchable only after the host reads it during the current process lifetime.

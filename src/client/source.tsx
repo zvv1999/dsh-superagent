@@ -111,7 +111,7 @@ export function SourceSettings({ focus }: { focus?: string }) {
         {source ? <SourceCard source={source} embedded focused={focus === platform} /> : <div className="dt-platform-section"><Hint>{t('imBotUnavailable')}</Hint></div>}
       </section>
     })}
-    {sources.filter(source => source.id !== 'feishu' && source.id !== 'dingtalk').map(source => <SourceCard key={source.id} source={source} />)}
+    {sources.filter(source => !['feishu', 'dingtalk', 'dingtalk-user'].includes(source.id)).map(source => <SourceCard key={source.id} source={source} />)}
     <ConfigHistory blocks={['source:']} />
   </div>
 }

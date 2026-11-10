@@ -16,6 +16,7 @@ const ChatId = DingTalkChatId
 export const DingTalkUserConnect = z.object({ mode: z.enum(['saved', 'authorize']), profileId: Profile.optional() }).strict()
 export type DingTalkUserFailure = 'not_connected' | 'expired' | 'no_saved_login' | 'identity_changed'
   | 'authorization_failed' | 'upstream_failed' | 'save_failed' | 'invalid_resource' | 'subscription_limit'
+  | 'task_intake_rejected' | 'task_message_unreadable'
 /** Stable public diagnostic code; never contains provider output, credential data or an underlying cause. */
 export class DingTalkUserError extends Error {
   constructor(readonly code: DingTalkUserFailure) { super(`DingTalk user connection: ${code}`) }
@@ -51,7 +52,7 @@ const Messages = z.object({ page_size: z.coerce.number().int().min(1).max(50).de
     .refine(value => Number.isFinite(Date.parse(value))).optional() }).strict()
 interface Attempt { controller: AbortController; status: 'checking' | 'waiting' | 'select_account'; challenge?: CliChallenge
   accounts?: DingTalkUserView['accounts'] }
-interface Host { stateDir: string; lifetime: AbortSignal; now?: () => number
+interface Host { stateDir: string; lifetime: AbortSignal; now?: () => number; changed?: () => void
   cli?: Pick<ManagedCli, 'installed' | 'ensure' | 'configurations' | 'connectionDirectory' | 'io'>
   authorize?: CliDriver['authorize'] }
 
@@ -158,6 +159,7 @@ export class DingTalkUser {
       if (this.attempt !== attempt || signal.aborted) return
       await this.persist(selected)
       this.saved = selected; this.generation = randomUUID(); this.lastError = undefined; this.attempt = undefined
+      this.host.changed?.()
     })
   }
   cancel(): Promise<DingTalkUserView> {
@@ -173,6 +175,7 @@ export class DingTalkUser {
       await rm(this.file, { force: true })
       this.saved = undefined; this.generation = randomUUID(); this.lastError = undefined
       this.groups = undefined
+      this.host.changed?.()
       return this.current()
     })
   }
@@ -184,6 +187,13 @@ export class DingTalkUser {
       this.active(saved, generation)
       return `${generation}:${status.refreshExpiresAt ?? status.expiresAt}`
     } catch (error) { throw failure(error) }
+  }
+  /** Safe synchronous scope check; never exposes credentials or grants reads to another selected account. */
+  owns(account: { id: string; corpId: string }): boolean {
+    try {
+      const saved = this.connected()
+      return saved.user.id === account.id && saved.user.corpId === account.corpId
+    } catch { return false }
   }
   /** A transient list scoped to this exact personal authorization; no cross-account or on-disk cache. */
   groupList(): DingTalkGroupList | undefined {

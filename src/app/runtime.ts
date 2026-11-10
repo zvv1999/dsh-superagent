@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
-import { Engine, key, reasonText, type EngineForSettings, type ReceiveResult, type Ticket, type Trigger } from '../core/index.ts'
+import { Engine, key, reasonText, type EngineForSettings, type PolicyEffect, type ReceiveResult, type Ticket, type Trigger } from '../core/index.ts'
 import { allowedSender, settingsPolicy } from '../policy.ts'
 import { SourceRegistry } from '../sources/registry.ts'
 import { OperatorRequests, operatorKind } from '../sources/operator.ts'
@@ -49,6 +49,7 @@ import { CliConnect } from './cli-connect.ts'
 import { FeishuUser } from './feishu-user.ts'
 import { DingTalkUser } from './dingtalk-user.ts'
 import { DingTalkSubscriptions } from './dingtalk-subscriptions.ts'
+import { dingtalkSubscriptionKind, DINGTALK_SUBSCRIPTION_SOURCE } from '../sources/dingtalk-subscription.ts'
 import { sourceContextOf, type SourceContextDeps } from './source-context.ts'
 import type { ResourceHost } from './resources.ts'
 import { mainTools, type MainToolsHost } from './tools/main.ts'
@@ -131,7 +132,8 @@ export class Runtime extends Service implements SourceHost {
       const link = (trigger: Trigger, signal?: AbortSignal) => sourceLink(links, trigger, signal)
       const environment = (ticket: Ticket) => this.ticketEnvironment(ticket)
       this.feishuUser = new FeishuUser({ stateDir: machine.stateDir, lifetime: this.lifetime, port: () => ctx.webServer.port })
-      this.dingtalkUser = new DingTalkUser({ stateDir: machine.stateDir, lifetime: this.lifetime })
+      this.dingtalkUser = new DingTalkUser({ stateDir: machine.stateDir, lifetime: this.lifetime,
+        changed: () => this.personalScopeChanged() })
       const resources: ResourceHost = { store, pages: new TextCache(4_000_000), prompts, commands, masterId, context: ctx,
         feishuUser: this.feishuUser, dingtalkUser: this.dingtalkUser,
         promptVersion: id => this.sessions.promptVersion(id), mayRead: (id, revision) => this.sessions.mayRead(id, revision),
@@ -141,7 +143,16 @@ export class Runtime extends Service implements SourceHost {
         closing: () => this.closing(), environment,
         tools: (agent, ticket) => ticket ? executorTools(this.toolHost, ticket) : mainTools(this.toolHost, agent) })
       this.dingtalkSubscriptions = new DingTalkSubscriptions({ store, connection: this.dingtalkUser, lifetime: this.lifetime,
-        notify: (name, value, summary) => sessions.notify(name, value, summary) })
+        notify: (name, value, summary) => sessions.notify(name, value, summary),
+        receive: trigger => this.receive(trigger), evaluationMode: () => store.settings().eval.mode,
+        prepareTasks: async () => {
+          const policy = store.settings().policy, part = policy.sources[DINGTALK_SUBSCRIPTION_SOURCE] ?? { allowed: [], admission: {} }
+          await this.settings.save('policy', { ...policy, sources: { ...policy.sources,
+            [DINGTALK_SUBSCRIPTION_SOURCE]: { ...part, admission: { ...part.admission,
+              subscriptions: { ...part.admission.subscriptions, unlistedUnaddressed: 'inferred' } } } } }, store.blockRevision('policy'), 'panel')
+        },
+        changed: () => this.personalScopeChanged() })
+      this.disposers.push(sources.register(dingtalkSubscriptionKind(this.dingtalkSubscriptions)))
       resources.dingtalkSubscriptions = this.dingtalkSubscriptions
       const policyChanged: EngineForSettings['policyChanged'] = (from, to, effects) => { this.engine.policyChanged(from, to, effects) }
       this.settings = new Settings({ store, sources, engine: { policyChanged }, health: board, context: ctx, lifetime: this.lifetime, sessions,
@@ -227,6 +238,13 @@ export class Runtime extends Service implements SourceHost {
   pump(): Promise<void> { return this.passes.pump() }
   sendReplies(): Promise<void> { return this.outbox.sent() }
   private closing(): boolean { return this.closingFlag }
+  private personalScopeChanged(): void {
+    const policy = settingsPolicy(this.store.settings(), this.sources), effects = new Map<string, PolicyEffect>()
+    for (const ticket of this.store.tickets.open()) if (ticket.mandate.actor.source === DINGTALK_SUBSCRIPTION_SOURCE
+      && !policy.revalidate(ticket.mandate)) effects.set(ticket.id, { requesterAllowed: false, requester: ticket.mandate.actor })
+    this.engine.policyChanged(policy.version, policy.version, effects)
+    this.passes.request()
+  }
   /** Hold evaluation, dispatch, and outbound delivery while paused or awaiting setup; sources still record incoming triggers. */
   private paused(): boolean { return !this.setup.configured() || this.store.settings().paused }
   private async initialize(): Promise<void> {
@@ -238,6 +256,8 @@ export class Runtime extends Service implements SourceHost {
     }
     this.sessions.install()
     this.executor.install()
+    // Load the selected personal identity before persisted Mandates can resume.
+    await this.dingtalkUser.current()
     await this.sessions.ensure(this.masterId, this.machine.stateDir, 'dsh-superagent orchestrator', 'orchestrator')
     for (const id of this.settings.syncable()) await this.settings.sync(id).catch(() => { /* sync() records its failure in health. */ })
     // If stop() was called while awaiting setup, session creation, or policy sync, do not start background loops.

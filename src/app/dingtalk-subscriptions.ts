@@ -1,7 +1,8 @@
-/** Owner-selected personal chat polling. Only metadata is retained; updates inject context without waking an agent. */
+/** Owner-selected polling, with context-only subscriptions and explicitly enabled task observations. */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { key } from '../core/index.ts'
+import { key, threadKey, type ReceiveResult, type ScopeResult, type Trigger } from '../core/index.ts'
+import { DINGTALK_SUBSCRIPTION_SOURCE } from '../sources/dingtalk-subscription.ts'
 import { KV } from '../kv.ts'
 import type { DingTalkSubscriptionView } from './api.ts'
 import { DingTalkChatId, DingTalkUserError, type DingTalkUser } from './dingtalk-user.ts'
@@ -9,21 +10,28 @@ import type { Store } from './store.ts'
 
 export const DingTalkSubscribe = z.object({ chatId: DingTalkChatId, name: z.string().trim().min(1).max(256),
   senderId: z.string().min(1).max(256).optional() }).strict()
+export const DingTalkSubscriptionMode = z.object({ mode: z.enum(['context', 'tasks']) }).strict()
 type Input = z.infer<typeof DingTalkSubscribe>
 export interface DingTalkSubscription {
   id: string; generation: string; chatId: string; name: string; senderId?: string
   account: { id: string; corpId: string }; startedAt: string; lastCheckedAt: string; received: number
   anchor: string[]; seen: string[]; head?: string[]; continuation?: string; lastMessageAt?: string
   historyGapAt?: string
+  mode?: 'context' | 'tasks'; triggered?: number; lastTriggerId?: string; unreadable?: number
   error?: string
 }
 const Page = z.object({ items: z.array(z.object({ messageId: z.string().min(1).max(512), conversationId: DingTalkChatId,
-  senderId: z.string().max(256).optional(), createTime: z.string().max(64).optional() })).max(50),
+  senderId: z.string().max(256).optional(), sender: z.string().max(256).optional(),
+  text: z.string().max(500_000).optional(), createTime: z.string().max(64).optional() })).max(50),
   pagination_known: z.literal(true), has_more: z.boolean(), next_resource: z.string().max(16000).nullable() })
 interface Host {
   store: Pick<Store, 'get' | 'set' | 'delete' | 'keys' | 'atomic'>
-  connection: Pick<DingTalkUser, 'current' | 'read' | 'readKey'>; lifetime: AbortSignal; now?: () => number
+  connection: Pick<DingTalkUser, 'current' | 'read' | 'readKey' | 'owns'>; lifetime: AbortSignal; now?: () => number
   notify(name: string, value: Record<string, unknown>, summary: string): void
+  receive(trigger: Trigger): ReceiveResult
+  evaluationMode(): 'off' | 'observe' | 'auto'
+  prepareTasks(): Promise<void>
+  changed(id: string): void
 }
 const resource = (chatId: string) => `dingtalk-user/chat/${encodeURIComponent(chatId)}/messages?page_size=50`
 const matches = (row: DingTalkSubscription, user?: { id: string; corpId: string }) =>
@@ -40,7 +48,7 @@ function restoreGap(row: DingTalkSubscription): DingTalkSubscription {
   return { ...rest, historyGapAt: row.historyGapAt ?? row.lastCheckedAt }
 }
 
-/** Persists explicit owner-selected subscriptions and atomically checkpoints bounded reads with context-only notices. */
+/** Atomically checkpoints reads with metadata notices and, when enabled by the owner, deduplicated Eval inputs. */
 export class DingTalkSubscriptions {
   private queue: Promise<unknown> = Promise.resolve()
   private timer?: ReturnType<typeof setTimeout>
@@ -68,12 +76,85 @@ export class DingTalkSubscriptions {
       status: !connected ? 'suspended' : row.error ? 'error' : row.continuation ? 'catching_up' : 'listening',
       startedAt: row.startedAt, lastCheckedAt: row.lastCheckedAt, received: row.received, pollSeconds: 30,
       messagesResource: resource(row.chatId), ...row.lastMessageAt ? { lastMessageAt: row.lastMessageAt } : {},
+      mode: row.mode ?? 'context', triggered: row.triggered ?? 0, evaluationMode: this.host.evaluationMode(),
+      ...row.lastTriggerId ? { lastTriggerId: row.lastTriggerId,
+        lastThreadKey: threadKey({ source: DINGTALK_SUBSCRIPTION_SOURCE, id: key(row.account.corpId, row.account.id, row.chatId) }) } : {},
+      ...row.unreadable ? { unreadable: row.unreadable } : {},
       ...row.historyGapAt ? { historyGapAt: row.historyGapAt } : {},
       ...row.error ? { error: row.error } : {} }
   }
   async list(): Promise<DingTalkSubscriptionView[]> {
     const current = await this.host.connection.current()
     return this.rows().map(row => this.view(row, current.status === 'connected' && matches(row, current.user)))
+  }
+  /** Scope is checked again by Policy and by worker Mandate revalidation, including after disconnect or cancellation. */
+  scope(meta: Record<string, unknown>): ScopeResult {
+    const id = typeof meta.subscriptionId === 'string' ? meta.subscriptionId : ''
+    const row = this.host.store.get(KV.dingtalkUser.subscriptions(id))
+    if (!row || row.mode !== 'tasks' || !this.active(row) || !this.host.connection.owns(row.account)
+      || meta.origin !== 'personal-subscription' || meta.generation !== row.generation
+      || meta.ownerId !== row.account.id || meta.corpId !== row.account.corpId || meta.conversationId !== row.chatId
+      || (row.senderId !== undefined && meta.senderId !== row.senderId)) return { listened: false, reason: 'subscription_not_enabled' }
+    return { listened: true, observed: true, row: 'subscriptions' }
+  }
+  setMode(id: string, value: z.infer<typeof DingTalkSubscriptionMode>): Promise<DingTalkSubscriptionView> {
+    return this.serial(async () => {
+      const { mode } = DingTalkSubscriptionMode.parse(value)
+      const row = this.host.store.get(KV.dingtalkUser.subscriptions(id))
+      if (!row) throw new DingTalkUserError('invalid_resource')
+      if ((row.mode ?? 'context') === mode) return this.view(row, this.host.connection.owns(row.account))
+      let next = { ...row, mode, generation: randomUUID() }
+      if (mode === 'tasks') {
+        if (!this.host.connection.owns(row.account)) throw new DingTalkUserError('not_connected')
+        const grant = await this.host.connection.readKey()
+        const page = pageOf(await this.host.connection.read(resource(row.chatId), this.host.lifetime))
+        if (!this.active(row) || !this.host.connection.owns(row.account) || await this.host.connection.readKey() !== grant) throw new DingTalkUserError('not_connected')
+        if (page.items.some(item => item.conversationId !== row.chatId)) throw new DingTalkUserError('upstream_failed')
+        await this.host.prepareTasks()
+        if (!this.active(row) || !this.host.connection.owns(row.account) || await this.host.connection.readKey() !== grant) throw new DingTalkUserError('not_connected')
+        const ids = page.items.map(item => item.messageId)
+        next = { ...next, anchor: ids, seen: [...new Set([...ids, ...row.seen])].slice(0, 1000) }
+        delete next.head; delete next.continuation
+      }
+      this.host.store.atomic(() => {
+        this.host.store.set(KV.dingtalkUser.subscriptions(id), next)
+        this.host.changed(id)
+      })
+      return this.view(next, this.host.connection.owns(next.account))
+    })
+  }
+  /** Explicit one-message replay verifies the whole intake path without treating old history as new arrivals. */
+  assessLatest(id: string): Promise<{ triggerId: string; result: ReceiveResult }> {
+    return this.serial(async () => {
+      const row = this.host.store.get(KV.dingtalkUser.subscriptions(id))
+      if (!row || row.mode !== 'tasks' || !this.host.connection.owns(row.account)) throw new DingTalkUserError('not_connected')
+      const grant = await this.host.connection.readKey()
+      const page = pageOf(await this.host.connection.read(resource(row.chatId), this.host.lifetime))
+      if (!this.active(row) || !this.host.connection.owns(row.account) || await this.host.connection.readKey() !== grant) throw new DingTalkUserError('not_connected')
+      if (page.items.some(item => item.conversationId !== row.chatId)) throw new DingTalkUserError('upstream_failed')
+      const message = page.items.find(item => !row.senderId || item.senderId === row.senderId)
+      if (!message) throw new DingTalkUserError('task_message_unreadable')
+      const trigger = this.taskTrigger(row, message)
+      return this.host.store.atomic(() => {
+        const result = this.host.receive(trigger)
+        if (result === 'filtered') throw new DingTalkUserError('task_intake_rejected')
+        this.host.store.set(KV.dingtalkUser.subscriptions(id), { ...row,
+          triggered: (row.triggered ?? 0) + (result === 'stored' ? 1 : 0), lastTriggerId: trigger.id })
+        return { triggerId: trigger.id, result }
+      })
+    })
+  }
+  private taskTrigger(row: DingTalkSubscription, item: z.infer<typeof Page>['items'][number]): Trigger {
+    if (!item.text?.trim()) throw new DingTalkUserError('task_message_unreadable')
+    return { id: key(DINGTALK_SUBSCRIPTION_SOURCE, row.account.corpId, row.account.id, row.chatId, item.messageId),
+      source: DINGTALK_SUBSCRIPTION_SOURCE, actor: { source: DINGTALK_SUBSCRIPTION_SOURCE, id: '' }, human: false,
+      threads: [{ source: DINGTALK_SUBSCRIPTION_SOURCE, id: key(row.account.corpId, row.account.id, row.chatId) }],
+      at: new Date(this.clock()).toISOString(), text: item.text.slice(0, 30_000),
+      meta: { origin: 'personal-subscription', subscriptionId: row.id, generation: row.generation,
+        ownerId: row.account.id, corpId: row.account.corpId, conversationId: row.chatId, chatName: row.name,
+        messageId: item.messageId, ...item.senderId ? { senderId: item.senderId } : {},
+        ...item.sender ? { senderName: item.sender } : {}, ...item.createTime ? { messageCreatedAt: item.createTime } : {},
+        ...item.text.length > 30_000 ? { truncated: true, originalChars: item.text.length } : {} } }
   }
   subscribe(value: Input): Promise<DingTalkSubscriptionView> {
     return this.serial(async () => {
@@ -101,6 +182,7 @@ export class DingTalkSubscriptions {
     this.host.store.atomic(() => {
       this.host.store.delete(KV.dingtalkUser.subscriptions(id))
       if (removed) this.host.notify(`dingtalk-user:${id}`, { type: 'personal_dingtalk_subscription_removed', id }, 'Personal DingTalk subscription cancelled')
+      if (removed) this.host.changed(id)
     })
     return { removed }
   }
@@ -150,6 +232,13 @@ export class DingTalkSubscriptions {
       if (latest && (!next.lastMessageAt || latest > next.lastMessageAt)) next.lastMessageAt = latest
       if (!this.active(row)) return
       this.host.store.atomic(() => {
+        if (row.mode === 'tasks') for (const item of [...fresh].reverse()) {
+          if (!item.text?.trim()) { next.unreadable = (next.unreadable ?? 0) + 1; continue }
+          const trigger = this.taskTrigger(row, item), result = this.host.receive(trigger)
+          if (result === 'filtered') throw new DingTalkUserError('task_intake_rejected')
+          next.triggered = (next.triggered ?? 0) + (result === 'stored' ? 1 : 0)
+          next.lastTriggerId = trigger.id
+        }
         this.host.store.set(KV.dingtalkUser.subscriptions(row.id), next)
         if (fresh.length) this.host.notify(`dingtalk-user:${row.id}`, {
           type: 'personal_dingtalk_update', subscription: this.view(next, true), message_ids: fresh.map(item => item.messageId),

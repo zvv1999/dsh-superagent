@@ -336,11 +336,25 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
   'GET connections/dingtalk-user/subscriptions': { answer: () => server.dingtalkSubscriptions },
   'POST connections/dingtalk-user/subscriptions': { body: true, answer: ({ body }) => {
     const item: DingTalkSubscriptionView = { ...body, id: 'personal-subscription', status: 'listening', received: 0, pollSeconds: 30,
+      mode: 'context', triggered: 0, evaluationMode: server.settings.eval.mode,
       startedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString(), messagesResource: `dingtalk-user/chat/${encodeURIComponent(body.chatId)}/messages` }
     server.dingtalkSubscriptions.push(item)
     return item
   } },
   'POST connections/dingtalk-user/subscriptions/:id/check': { body: true, answer: () => server.dingtalkSubscriptions },
+  'POST connections/dingtalk-user/subscriptions/:id/mode': { body: true, answer: ({ params, body }) => {
+    const row = server.dingtalkSubscriptions.find(item => item.id === params.id)
+    if (!row) throw new Error('Unknown subscription')
+    Object.assign(row, body)
+    return row
+  } },
+  'POST connections/dingtalk-user/subscriptions/:id/assess-latest': { body: true, answer: ({ params }) => {
+    const row = server.dingtalkSubscriptions.find(item => item.id === params.id)
+    if (!row) throw new Error('Unknown subscription')
+    row.triggered++
+    row.lastTriggerId = 'observed-latest'; row.lastThreadKey = 'dingtalk-user:observed-thread'
+    return { triggerId: 'observed-latest', result: 'stored' }
+  } },
   'POST connections/dingtalk-user/subscriptions/:id/unsubscribe': { body: true, answer: ({ params }) => {
     const before = server.dingtalkSubscriptions.length
     server.dingtalkSubscriptions = server.dingtalkSubscriptions.filter(item => item.id !== params.id)

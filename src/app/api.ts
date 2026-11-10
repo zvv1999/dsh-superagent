@@ -4,6 +4,7 @@ import type { CliApplication, CliChallenge, CliCheck, CliFailureCode, CliPlatfor
 import type { FeishuUserFailure } from './feishu-user.ts'
 import type { DingTalkGroupList, DingTalkUserFailure } from './dingtalk-user.ts'
 import type { OperatorRequest, OperatorReceipt } from '../sources/operator.ts'
+import type { ReceiveResult } from '../core/index.ts'
 import type { PromptConfig, Prompts } from './prompts.ts'
 import type { PromptsView, StateView, TicketPageView } from './http.ts'
 import type { HistoryView } from './settings-history.ts'
@@ -113,6 +114,8 @@ export interface DingTalkSubscriptionView {
   status: 'listening' | 'catching_up' | 'suspended' | 'error'
   startedAt: string; lastCheckedAt: string; lastMessageAt?: string; received: number; pollSeconds: number
   messagesResource: string; historyGapAt?: string; error?: string
+  mode: 'context' | 'tasks'; triggered: number; evaluationMode: 'off' | 'observe' | 'auto'
+  lastTriggerId?: string; lastThreadKey?: string; unreadable?: number
 }
 
 export interface Api {
@@ -121,6 +124,8 @@ export interface Api {
   'POST connections/dingtalk-user/subscriptions': { body: { chatId: string; name: string; senderId?: string }; response: DingTalkSubscriptionView }
   'POST connections/dingtalk-user/subscriptions/:id/unsubscribe': { body: Record<string, never>; response: { removed: boolean } }
   'POST connections/dingtalk-user/subscriptions/:id/check': { body: Record<string, never>; response: DingTalkSubscriptionView[] }
+  'POST connections/dingtalk-user/subscriptions/:id/mode': { body: { mode: 'context' | 'tasks' }; response: DingTalkSubscriptionView }
+  'POST connections/dingtalk-user/subscriptions/:id/assess-latest': { body: Record<string, never>; response: { triggerId: string; result: ReceiveResult } }
   'GET connections/dingtalk-user': { response: DingTalkUserView }
   'GET connections/dingtalk-user/groups': { response: DingTalkGroupList | null }
   'POST connections/dingtalk-user/groups/refresh': { body: Record<string, never>; response: DingTalkGroupList }

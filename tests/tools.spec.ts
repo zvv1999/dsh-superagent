@@ -39,6 +39,7 @@ it('exposes personal subscription management and status only to the main Session
   const { sessionId } = await h.acceptedTicket(feishu('personal-subscription-scope', '@bot task'))
   const subscription = { chatId: 'cid_one', name: 'Selected person', senderId: 'selected' }
   const subscribe = vi.spyOn(h.runtime.dingtalkSubscriptions, 'subscribe').mockResolvedValue({ ...subscription, id: 'one',
+    mode: 'context', triggered: 0, evaluationMode: 'observe',
     status: 'listening', received: 0, pollSeconds: 30, startedAt: new Date().toISOString(),
     lastCheckedAt: new Date().toISOString(), messagesResource: 'dingtalk-user/chat/cid_one/messages' })
   const unsubscribe = vi.spyOn(h.runtime.dingtalkSubscriptions, 'unsubscribe')

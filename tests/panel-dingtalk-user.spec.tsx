@@ -32,6 +32,7 @@ it('shows consent only in the personal card and can cancel without losing an exi
 it('shows the selected subscription and lets the owner check or cancel it without changing task intake', async () => {
   const before = JSON.stringify(server.settings)
   server.dingtalkSubscriptions = [{ id: 'one', chatId: 'cid_one', name: 'Selected person', senderId: 'selected',
+    mode: 'context', triggered: 0, evaluationMode: 'observe',
     status: 'listening', received: 3, pollSeconds: 30, startedAt: new Date().toISOString(),
     lastCheckedAt: new Date().toISOString(), messagesResource: 'dingtalk-user/chat/cid_one/messages' }]
   await mount()
@@ -48,6 +49,7 @@ it('shows the selected subscription and lets the owner check or cancel it withou
 
 it('shows an unresolved historical gap even while the selected subscription is receiving messages', async () => {
   server.dingtalkSubscriptions = [{ id: 'one', chatId: 'cid_one', name: 'Selected person',
+    mode: 'context', triggered: 0, evaluationMode: 'observe',
     status: 'listening', received: 3, pollSeconds: 30, startedAt: new Date().toISOString(),
     lastCheckedAt: new Date().toISOString(), historyGapAt: new Date().toISOString(),
     messagesResource: 'dingtalk-user/chat/cid_one/messages' }]
@@ -56,6 +58,37 @@ it('shows an unresolved historical gap even while the selected subscription is r
   expect(subscription.textContent).toContain(zh['dingtalkSubscriptionStatus.listening'])
   expect(subscription.textContent).toContain(zh.dingtalkSubscriptionHistoryGap)
   expect(subscription.querySelector('[role="alert"]')).not.toBeNull()
+})
+
+it('shows the task switch, real latest-message action, global observe mode and a link to existing settings', async () => {
+  server.dingtalkSubscriptions = [{ id: 'one', chatId: 'cid_one', name: 'Selected group', status: 'listening',
+    received: 0, triggered: 0, mode: 'context', evaluationMode: 'observe', pollSeconds: 30,
+    startedAt: '', lastCheckedAt: '', messagesResource: '' }]
+  await mount()
+  await click(zh.imPersonalManage.replace('{name}', zh['imPlatform.dingtalk']))
+  await click(zh.dingtalkSubscriptionEnableTasks)
+  expect(server.requests.find(item => item.path.endsWith('/one/mode'))?.body).toEqual({ mode: 'tasks' })
+  expect(text()).toContain(zh['mode.observe'])
+  expect(text()).toContain(zh.dingtalkSubscriptionTriggered)
+  await click(zh.dingtalkSubscriptionAssessLatest)
+  expect(server.requests.filter(item => item.path.endsWith('/one/assess-latest'))).toHaveLength(1)
+  expect(server.dingtalkSubscriptions[0]?.triggered).toBe(1)
+  await click(zh.close)
+  await click(zh.dingtalkSubscriptionModeSettings)
+  expect(document.querySelector('[aria-label="接单模式"]')).not.toBeNull()
+  const blocks = [...document.querySelectorAll('.dt-block-title')].map(item => item.textContent)
+  expect(blocks[0]).toContain(zh.evalSettings)
+})
+
+it('navigates from a personal subscription to its persisted trigger and decision trace', async () => {
+  server.dingtalkSubscriptions = [{ id: 'one', chatId: 'cid_one', name: 'Selected group', status: 'listening',
+    received: 1, triggered: 1, mode: 'tasks', evaluationMode: 'auto', pollSeconds: 30,
+    startedAt: '', lastCheckedAt: '', messagesResource: '', lastThreadKey: 'dingtalk-user:observed-thread', lastTriggerId: 'observed-latest' }]
+  await mount()
+  await click(zh.dingtalkSubscriptionTrace)
+  expect(server.requests.some(item => item.path.startsWith('threads/dingtalk-user:observed-thread?'))).toBe(true)
+  expect(JSON.parse(sessionStorage.getItem('dsh-superagent/route')!).route).toEqual({ page: 'trigger',
+    id: 'dingtalk-user:observed-thread', query: { trigger: 'observed-latest' } })
 })
 
 it('lets the owner choose and subscribe to personal group messages without any robot plugin or task-source changes', async () => {
@@ -85,7 +118,8 @@ it('lets the owner choose and subscribe to personal group messages without any r
 it('excludes full-chat subscriptions, keeps sender-restricted chats selectable and preserves selection on refresh failure', async () => {
   Object.assign(server.dingtalkUser, { configured: true, status: 'connected' })
   server.dingtalkGroups = { labels: { cid_full: '已订阅群', cid_filtered: '按人订阅群', cid_suspended: '其他账号的旧订阅' }, complete: true, scanned: 3, pages: 1 }
-  const base = { status: 'listening' as const, received: 0, pollSeconds: 30, startedAt: '', lastCheckedAt: '', messagesResource: '' }
+  const base = { status: 'listening' as const, received: 0, pollSeconds: 30, startedAt: '', lastCheckedAt: '', messagesResource: '',
+    mode: 'context' as const, triggered: 0, evaluationMode: 'observe' as const }
   server.dingtalkSubscriptions = [{ ...base, id: 'full', chatId: 'cid_full', name: '已订阅群' },
     { ...base, id: 'filtered', chatId: 'cid_filtered', name: '按人订阅群', senderId: 'selected-person' },
     { ...base, id: 'suspended', chatId: 'cid_suspended', name: '其他账号的旧订阅', status: 'suspended' }]

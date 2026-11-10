@@ -118,13 +118,16 @@ it('permits only the exact loopback OAuth GET callback without the panel header 
 
 it('gates personal subscriptions by same origin and validates only bounded target metadata', async () => {
   const subscriptions = { list: vi.fn(async () => []), subscribe: vi.fn(async () => ({ id: 'one' })),
-    unsubscribe: vi.fn(() => ({ removed: true })), check: vi.fn(async () => []) }
+    unsubscribe: vi.fn(() => ({ removed: true })), check: vi.fn(async () => []),
+    setMode: vi.fn(async () => ({ id: 'one', mode: 'tasks' })), assessLatest: vi.fn(async () => ({ triggerId: 'latest', result: 'stored' })) }
   const call = serve({ dingtalkSubscriptions: subscriptions })
   for (const [method, path, body] of [
     ['GET', 'connections/dingtalk-user/subscriptions', undefined],
     ['POST', 'connections/dingtalk-user/subscriptions', { chatId: 'cid_one', name: 'Selected', senderId: 'person' }],
     ['POST', 'connections/dingtalk-user/subscriptions/one/check', {}],
     ['POST', 'connections/dingtalk-user/subscriptions/one/unsubscribe', {}],
+    ['POST', 'connections/dingtalk-user/subscriptions/one/mode', { mode: 'tasks' }],
+    ['POST', 'connections/dingtalk-user/subscriptions/one/assess-latest', {}],
   ] as const) {
     expect(await call(method, path, body, { origin: 'https://evil.example' })).toMatchObject({ status: 403 })
     expect(await call(method, path, body)).toMatchObject({ status: 200 })
@@ -135,6 +138,12 @@ it('gates personal subscriptions by same origin and validates only bounded targe
     expect(await call('POST', 'connections/dingtalk-user/subscriptions', body)).toMatchObject({ status: 400 })
   }
   expect(subscriptions.subscribe).toHaveBeenCalledTimes(before)
+  for (const body of [{ mode: 'auto' }, { mode: 'tasks', owner: 'forged' }]) {
+    expect(await call('POST', 'connections/dingtalk-user/subscriptions/one/mode', body)).toMatchObject({ status: 400 })
+  }
+  expect(await call('POST', 'connections/dingtalk-user/subscriptions/one/assess-latest', { text: 'forged' })).toMatchObject({ status: 400 })
+  expect(subscriptions.setMode).toHaveBeenCalledTimes(1)
+  expect(subscriptions.assessLatest).toHaveBeenCalledTimes(1)
 })
 
 it('answers each kind of failure with its own status', async () => {

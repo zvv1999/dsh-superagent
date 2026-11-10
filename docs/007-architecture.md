@@ -333,9 +333,10 @@ Some generic modules still refer directly to GitHub, GitLab or Feishu:
 | `src/client/feishu-user.tsx` | Personal-history authorization section in the unified Feishu card, with renewal state; credentials do not enter settings drafts or browser storage |
 | `src/app/dingtalk-connect.ts` | DingTalk device authorization, pinned organization profiles, app selection and validated robot credential fallback |
 | `src/app/dingtalk-user.ts` | Independent owner-history connection over pinned private DWS; fixed organization/user, bounded read commands, explicit pagination and safe selection metadata |
-| `src/app/dingtalk-subscriptions.ts` | Owner-selected, account-scoped personal chat polling; bounded restart cursors and atomic context notices without task or reply authority |
+| `src/app/dingtalk-subscriptions.ts` | Owner-selected personal polling, context notices and opt-in task intake with atomic checkpoints, deduplication and scope revocation |
+| `src/sources/dingtalk-subscription.ts` | Inferred personal-subscription observations through existing Eval and Ticket policy, without a reply channel |
 | `src/sources/operator.ts` | Explicit same-origin local-owner request intake, stable request IDs and an internal Source without external reply channels; uses existing Router, Tickets and worker slots |
-| `src/client/dingtalk-user.tsx` | Personal DingTalk account reuse/consent, status and local disconnect, independent of robot Source switches and task policy |
+| `src/client/dingtalk-user.tsx` | Personal DingTalk account reuse/consent, subscription task controls, accept-mode and processing-trace links, independent of robot connection settings |
 | `src/app/wechat-login.ts` | Ephemeral panel-only WeChat login sessions, cancellation, verification, expiry and exclusive private credential creation |
 | `src/app/settings-history.ts` | `policyHistory`: each saved settings revision with what it changed from the one before |
 | `src/app/prompts.ts` | Prompts, `builtInParts`, the built-in parts a team may override, and `promptParts`, the order of a role's prompt sections |
@@ -439,8 +440,9 @@ Some generic modules still refer directly to GitHub, GitLab or Feishu:
 | `tests/dingtalk-connect.spec.ts` | Device challenge parsing, profile pinning, paginated explicit app selection, credential consistency and direct bot fallback |
 | `tests/dingtalk-user.spec.ts` | Private personal login reuse, profile isolation, bounded history/pagination, expiry, malformed storage, cancellation and disconnect races |
 | `tests/dingtalk-subscriptions.spec.ts` | Owner-selected polling, restart checkpoints, sender filtering, deduplication, account isolation, bounded catch-up, cancellation and explicit gaps |
+| `tests/dingtalk-task-intake.spec.ts` | Personal subscriptions through Router, observe/auto/off gates, rule matching, worker launch, revoked scope, deduplication and no outbound replies |
 | `tests/operator-requests.spec.ts` | Explicit local-owner intake through Router and worker creation, idempotency, identity separation, disabled Source and no external replies |
-| `tests/panel-dingtalk-user.spec.tsx` | Personal account reuse and device consent without modifying Source/task permissions |
+| `tests/panel-dingtalk-user.spec.tsx` | Personal account reuse/consent, explicit subscription task controls and links to accept-mode settings and persisted processing traces |
 | `tests/panel-cli-connect.spec.tsx` | Installation/authentication states, app choice, ephemeral secret forms, review, restart recovery and private sender pairing |
 | `tests/panel-feishu-user.spec.tsx` | Independent personal read authorization, cleared secret fields, credential reuse and no bot Source or Policy mutation |
 | `tests/wechat-login.spec.ts` | Login lifecycle, revision conflicts, private file safety, credential rollback and atomic policy/account binding |
