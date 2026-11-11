@@ -128,6 +128,7 @@ export function TicketPage({ id }: { id: string }) {
     return reason ? t('endedAt', { time, outcome, reason }) : t('endedAtShort', { time, outcome })
   })()
   const channel = data.channels[0]
+  const latestReport = data.assignments.at(-1)?.report
   return <>
     <PageHead title={data.title}>
       {opening?.url && <ActionLink href={opening.url}>{t('openThread', { source: valueLabel(t, 'source', opening.source) })}</ActionLink>}
@@ -156,6 +157,13 @@ export function TicketPage({ id }: { id: string }) {
     {data.deliveryError && <p className="dt-banner dt-danger dt-mono">
       <span className="dt-banner-label">{t('deliveryFailedPrefix')}</span>{data.deliveryError}
     </p>}
+    {latestReport && latestReport.state !== 'progress' && <Section title={t('latestResult')} icon="message">
+      <div className="dt-row-meta">
+        <Tag tone="neutral">{valueLabel(t, 'report', latestReport.state)}</Tag><When at={latestReport.at} />
+      </div>
+      <Hint>{t('latestResultHint')}</Hint>
+      <div className="dt-assignment-report"><MarkdownLite text={latestReport.summary} /></div>
+    </Section>}
     <MandateDetails ticket={data} actor={actor} />
     {undelivered.length > 0 && <Section title={t('undeliveredInputs')} count={undelivered.length}>
       <Hint>{data.deliveryError ? t('inputRetryHint') : data.paused ? t('inputPausedHint') : t('inputWaitingHint')}</Hint>
@@ -167,7 +175,7 @@ export function TicketPage({ id }: { id: string }) {
     </Section>}
     <div className="dt-details">
       {/* Final reports remain visible even when the ticket only ran once; retries retain earlier evidence. */}
-      {(data.assignments.length > 1 || data.assignments.some(item => item.report && item.report.state !== 'progress')) && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`} open><Assignments
+      {(data.assignments.length > 1 || data.assignments.some(item => item.report && item.report.state !== 'progress')) && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`}><Assignments
         ticket={data} /></Details>}
       {data.environment.length > 0 && <Details icon="settings" title={t('term.environment')}>
         <table className="dt-table"><tbody>{data.environment.map(variable => <tr key={variable.key} title={localized(t,
