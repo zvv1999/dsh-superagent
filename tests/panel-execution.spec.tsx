@@ -226,8 +226,13 @@ it.each(['dropped', 'ready', 'blocked'] as const)('shows the full %s diagnosis e
   at({ page: 'execution', id: 't1' })
   await mount()
   expect(text()).toContain('Last trace verification: HTTP 401, production fix unverified.')
+  const sections = all('.dt-section')
+  expect(sections[0]?.querySelector('.dt-section-name')?.textContent).toBe(zh.latestResult)
+  expect(sections[0]?.textContent).toContain('Diagnostic conclusion.')
+  expect(sections[0]?.textContent).toContain('Last trace verification: HTTP 401, production fix unverified.')
+  expect(sections[0]?.textContent).toContain(zh.latestResultHint)
+  await click(`${zh['term.assignment']} · 1`)
   expect(document.querySelector('.dt-disclosure-body .dt-assignment-report')?.textContent).toContain('Diagnostic conclusion.')
-  expect(text()).toContain(zh.assignmentNumber.replace('{number}', '1'))
   await remount(en)
   expect(text()).toContain('Last trace verification: HTTP 401, production fix unverified.')
   const styles = document.createElement('style')
@@ -248,9 +253,24 @@ it('retains the evidence from the blocked assignment beside the report after a r
       { ...assignment, id: 'a2', state: 'ended', report: { state: 'ready', summary: 'Follow-up: evidence inspected, diagnosis complete.', at: '' } }] }
   at({ page: 'execution', id: 't1' })
   await mount()
+  expect(all('.dt-section')[0]?.textContent).toContain('Follow-up: evidence inspected, diagnosis complete.')
+  expect(all('.dt-section')[0]?.textContent).not.toContain('Initial fetch: HTTP 401.')
+  await click(`${zh['term.assignment']} · 2`)
   expect(all('.dt-disclosure-body .dt-assignment-report').map(node => node.textContent)).toEqual([
     'Follow-up: evidence inspected, diagnosis complete.', 'Initial fetch: HTTP 401.',
   ])
+})
+
+it('keeps an earlier report in assignment history while a retry has no new result', async () => {
+  const ticket = server.ticketDetails.t1!, assignment = ticket.assignments[0]!
+  server.ticketDetails.t1 = { ...ticket, stage: 'working', action: undefined,
+    assignments: [{ ...assignment, state: 'ended', report: { state: 'blocked', summary: 'Previous attempt blocked.', at: '' } },
+      { ...assignment, id: 'a2', state: 'running' }] }
+  at({ page: 'execution', id: 't1' })
+  await mount()
+  expect(all('.dt-section-name').map(node => node.textContent)).not.toContain(zh.latestResult)
+  await click(`${zh['term.assignment']} · 2`)
+  expect(text()).toContain('Previous attempt blocked.')
 })
 
 it('sends one stop for a double click on Confirm', async () => {

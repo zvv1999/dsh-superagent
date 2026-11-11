@@ -27,7 +27,7 @@ The tabs follow the workflow: **Overview**, **Source**, **Trigger**, **Eval**, *
 
 A dropped message links to its Ticket, or to its Thread when it has no Ticket. The Source page explains whether its conversation disappeared or the Source stopped listening to it.
 
-Ticket details show non-progress worker reports in **Assignments**, including when there was only one assignment. Full evidence and conclusions remain available after the ticket ends; retries keep the earlier reports beside the new result. A blocked or failed ticket offers **Retry** once its prerequisite has been remedied. A completed diagnostic report proves the requested diagnosis, not that the reported production defect has been fixed.
+Ticket details show the latest assignment's non-progress report in **Latest result**, above authorization and inputs, with its state, time and full conclusion. **Assignments** keeps earlier reports in a collapsed history, including when there was only one assignment. A retry without a new report does not present the previous attempt as its latest result. Full evidence and conclusions remain available after the ticket ends. A blocked or failed ticket offers **Retry** once its prerequisite has been remedied. A completed diagnostic report proves the requested diagnosis, not that the reported production defect has been fixed.
 
 A human follow-up still owned by an Executor is marked **Delivered to Ticket**, without an Eval. The Thread also shows hand-back reasons and context-only Subscriptions. **Evaluate again** can send that follow-up to Eval, or retry a Trigger with no effective judgement: one filtered by its Source, an unavailable Eval, or a delivered message with neither a non-stop Decision nor an Executor acknowledgement.
 
